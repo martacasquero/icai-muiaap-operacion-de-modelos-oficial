@@ -6,3 +6,7 @@ la solución del profesorado.
 
 El profesor colocará `wine_quality_classifier.joblib` dentro de `models/` antes
 del taller. El modelo ya está entrenado: no hay que modificarlo ni reentrenarlo.
+
+
+
+
