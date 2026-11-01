@@ -7,6 +7,9 @@ Punto de partida: la API de S8 valida la entrada, pero la salida todavía es un
 from datetime import UTC, datetime  # noqa: F401 - pista para el TODO S9.1c
 from enum import StrEnum
 from typing import Literal
+from typing import Annotated
+
+from fastapi import APIRouter, Body
 
 from pydantic import (  # noqa: F401 - pistas para S9.1
     BaseModel,
@@ -38,17 +41,19 @@ class WineFeatures(BaseModel):
     # TODO S9.3d: añade `description=` a cada Field (unidad incluida, p. ej.
     # "Alcohol (% vol.)."). Swagger la muestra junto al rango; el test
     # `test_feature_fields_are_described` comprueba los once campos.
-    fixed_acidity: float = Field(ge=0, le=20)
-    volatile_acidity: float = Field(ge=0, le=2)
-    citric_acid: float = Field(ge=0, le=2)
-    residual_sugar: float = Field(ge=0, le=20)
-    chlorides: float = Field(ge=0, le=1)
-    free_sulfur_dioxide: float = Field(ge=0, le=100)
-    total_sulfur_dioxide: float = Field(ge=0, le=300)
-    density: float = Field(ge=0.98, le=1.01)
-    ph: float = Field(ge=2.5, le=4.5)
-    sulphates: float = Field(ge=0, le=3)
-    alcohol: float = Field(ge=5, le=20)
+
+    #nota: la descripción ha sido ayuda de la inteligencia artificial 
+    fixed_acidity: float = Field(ge=0, le=20, description="Acidez fija, como ácido tartárico (g/dm³).")
+    volatile_acidity: float = Field(ge=0, le=2, description="Acidez volátil, como ácido acético (g/dm³).")
+    citric_acid: float = Field(ge=0, le=2, description="Ácido cítrico (g/dm³).")
+    residual_sugar: float = Field(ge=0, le=20, description="Azúcar residual (g/dm³).")
+    chlorides: float = Field(ge=0, le=1, description="Cloruros, como cloruro sódico (g/dm³).")
+    free_sulfur_dioxide: float = Field(ge=0, le=100, description="Dióxido de azufre libre (mg/dm³).")
+    total_sulfur_dioxide: float = Field(ge=0, le=300, description="Dióxido de azufre total (mg/dm³).")
+    density: float = Field(ge=0.98, le=1.01, description="Densidad (g/cm³).")
+    ph: float = Field(ge=2.5, le=4.5, description="pH (adimensional).")
+    sulphates: float = Field(ge=0, le=3, description="Sulfatos, como sulfato potásico (g/dm³).")
+    alcohol: float = Field(ge=5, le=20, description="Alcohol (% vol.).")
 
 
 class PredictionRequest(BaseModel):
@@ -74,11 +79,22 @@ class Prediction(BaseModel):
     # `quality_band` (usa QualityBand, no `str`), `confidence` (entre 0 y 1),
     # `model_version` y `preprocessing_version`. Lo que no declares aquí no
     # saldrá en la respuesta: así se filtra `raw_score`.
+    model_config = ConfigDict(from_attributes=True)
+    quality_band: QualityBand
+    confidence : float = Field(ge=0,le=1)
+    model_version : str
+    preprocessing_version : str
+
     # TODO S9.1b: el modelo devuelve la confianza con todos sus decimales; el
     # contrato público la expone con dos. Investiga `@field_serializer` de
     # Pydantic v2: la decisión pertenece al contrato, no al predictor.
     # Comprobación: tests/test_s9_1_output_contract.py
 
+    @field_serializer("confidence")
+    def _two_decimals(self, value: float) -> float:
+        return round(value, 2)
+
+    
 
 class PredictionResponse(BaseModel):
     """Respuesta de `POST /v1/predictions`."""
@@ -87,6 +103,13 @@ class PredictionResponse(BaseModel):
     # nuevo `served_at: datetime`. Serialízalo en UTC, ISO 8601 y con sufijo
     # `Z` (por ejemplo `2026-10-20T09:15:00.123Z`). Añadir un campo es un
     # cambio compatible: ¿qué parte de la versión de la API debes subir?
+    prediction : Prediction 
+    request_id : str = Field(min_length=1)
+    served_at : datetime
+    @field_serializer("served_at")
+    def _utc_z(self, value: datetime) -> str:
+        iso = value.astimezone(UTC).isoformat()
+        return iso.replace("+00:00", "Z")
 
 
 class HealthResponse(BaseModel):
@@ -120,7 +143,6 @@ class FieldError(BaseModel):
 
 class ErrorDetail(BaseModel):
     """Descripción estable del error."""
-
     code: ErrorCode
     message: str
     fields: list[FieldError] | None = Field(
@@ -130,6 +152,5 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Sobre común de todas las respuestas de error (contrato de S7)."""
-
     error: ErrorDetail
     request_id: str
