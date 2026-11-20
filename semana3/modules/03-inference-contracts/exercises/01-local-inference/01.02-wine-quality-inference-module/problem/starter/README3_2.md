@@ -66,10 +66,20 @@ El problema del sample_id
 En test_inference_components.py, la request se crea sin sample_id.
 En test_predict_file.py, un sample_id vacío debe dar error, y el CSV trae sample_id como columna.
 
-Voy a hacer lo siguiente : sample_id: str | None = Field(default=None, min_length=1)
+Decisión final: `sample_id` **no** forma parte de `WineQualityRequest`. El contrato
+solo contiene las 11 características que consume el modelo. El CLI
+(`predict_file.py`) separa `sample_id` de la fila con `row.pop("sample_id")`,
+comprueba que sea un texto no vacío (si no, error con el número de fila y exit 2)
+y valida el resto con `WineQualityRequest`. Así se cumplen los dos tests:
+`test_inference_components.py` crea la petición sin `sample_id`, y
+`test_predict_file.py` rechaza un `sample_id` vacío. El `sample_id` se vuelve a
+añadir en la fila de salida.
 
+## Cambios tras la corrección
 
-
-
-Regla de API => 
-
+- El CLI crea el directorio de salida si no existe (`--output .tmp/...` ya funciona)
+  y escribe de forma atómica: primero un temporal y después `os.replace`.
+- La confianza se devuelve sin redondear (el redondeo pierde información).
+- `as_vector()` usa `FEATURE_NAMES` como única fuente del orden.
+- El `.joblib` ya no se versiona: va en `models/` (ignorado por `.gitignore`).
+- Ruff: `ruff check` y `ruff format --check` sin avisos.

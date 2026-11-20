@@ -1,4 +1,4 @@
-"""TODO: transformación de una muestra validada en el vector del modelo."""
+"""Transformación de una muestra validada en el vector del modelo."""
 
 from dataclasses import dataclass
 
@@ -21,11 +21,6 @@ FEATURE_NAMES = (
     "alcohol",
 )
 
-# Implementa WineFeatures y preprocess_wine_request(). El orden anterior debe
-# coincidir con el artefacto, no con un orden arbitrario del CSV.
-
-#tiene una función que se llama as_vector()
-
 
 @dataclass(frozen=True)
 class WineFeatures:
@@ -44,22 +39,10 @@ class WineFeatures:
     def as_vector(self) -> list[float]:
         """Devuelve una lista numérica ordenada para el clasificador cargado."""
 
-        return [
-            self.fixed_acidity,
-            self.volatile_acidity,
-            self.citric_acid,
-            self.residual_sugar,
-            self.chlorides,
-            self.free_sulfur_dioxide,
-            self.total_sulfur_dioxide,
-            self.density,
-            self.ph,
-            self.sulphates,
-            self.alcohol,
-        ]
+        # FEATURE_NAMES es la única fuente del orden: no se repite aquí.
+        return [float(getattr(self, name)) for name in FEATURE_NAMES]
 
 
 def preprocess_wine_request(request: WineQualityRequest) -> WineFeatures:
- 
+    """Convierte una petición validada en las características del modelo."""
     return WineFeatures(**request.model_dump())
-

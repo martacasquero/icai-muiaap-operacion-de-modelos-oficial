@@ -1,14 +1,19 @@
-"""TODO: contratos de entrada y salida de la inferencia."""
+"""Contratos de entrada y salida de la inferencia de calidad del vino."""
 
 from typing import Literal
- 
+
 from pydantic import BaseModel, ConfigDict, Field
 
-Quality_Band = Literal["needs_review", "acceptable", "excellent"]
+QualityBand = Literal["needs_review", "acceptable", "excellent"]
 
 
 class WineQualityRequest(BaseModel):
- 
+    """Las 11 características que consume el modelo.
+
+    `sample_id` NO forma parte del contrato: identifica la fila, pero no es una
+    característica. El CLI lo separa antes de validar.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     fixed_acidity: float = Field(ge=0, le=20)
@@ -25,8 +30,9 @@ class WineQualityRequest(BaseModel):
 
 
 class WineQualityPrediction(BaseModel):
- 
-    quality_band: Quality_Band
+    """Resultado de una predicción, con trazabilidad de versiones."""
+
+    quality_band: QualityBand
     confidence: float = Field(ge=0, le=1)
     model_version: str
     preprocessing_version: str
