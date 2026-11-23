@@ -1,13 +1,20 @@
-"""TODOs de la vista UX: copy de salida y traducción de errores."""
+"""Vista UX: copy de salida y traducción de errores."""
 
 from __future__ import annotations
 
 from model_ui.contracts import PredictionPayload, PredictionView, UserFacingError
+from model_ui.errors import (
+    ArtifactUnavailableError,
+    InferenceTimeoutError,
+    InputContractError,
+)
 from model_ui.policies import (
     DEFAULT_CONFIDENCE_POLICY,
     DEFAULT_LATENCY_POLICY,
     ConfidencePolicy,
     LatencyPolicy,
+    classify_confidence,
+    classify_latency,
 )
 
 QUALITY_LABELS = {
@@ -52,14 +59,62 @@ def build_prediction_view(
     confidence_policy: ConfidencePolicy = DEFAULT_CONFIDENCE_POLICY,
     latency_policy: LatencyPolicy = DEFAULT_LATENCY_POLICY,
 ) -> PredictionView:
-    """TODO: construye la vista con etiquetas, confianza, latencia y versiones."""
+    """Construye la vista con etiquetas, confianza, latencia y versiones."""
 
-    raise NotImplementedError(
-        "TODO: convierte la predicción validada en una vista segura para la UI"
+    confidence_level = classify_confidence(prediction.confidence, confidence_policy)
+    latency_status = classify_latency(latency_ms, latency_policy)
+    confidence_label, confidence_message = CONFIDENCE_COPY[confidence_level]
+    latency_label, latency_message = LATENCY_COPY[latency_status]
+    return PredictionView(
+        quality_band=prediction.quality_band,
+        quality_label=QUALITY_LABELS[prediction.quality_band],
+        confidence=prediction.confidence,
+        confidence_level=confidence_level,
+        confidence_label=confidence_label,
+        confidence_message=confidence_message,
+        latency_ms=latency_ms,
+        latency_status=latency_status,
+        latency_label=latency_label,
+        latency_message=latency_message,
+        model_version=prediction.model_version,
+        preprocessing_version=prediction.preprocessing_version,
     )
 
 
 def to_user_facing_error(error: Exception, request_id: str) -> UserFacingError:
-    """TODO: asigna código estable, mensaje accionable y recuperación."""
+    """Asigna código estable, mensaje accionable y recuperación.
 
-    raise NotImplementedError("TODO: traduce errores técnicos sin mostrar traceback")
+    Nunca se copia str(error) al mensaje: puede contener rutas o valores.
+    """
+
+    if isinstance(error, InputContractError):
+        return UserFacingError(
+            code="invalid_input",
+            title="Datos de entrada no válidos",
+            message="Algún valor del formulario no cumple el contrato del modelo.",
+            recovery="Revisa los valores del formulario y vuelve a enviarlo.",
+            request_id=request_id,
+        )
+    if isinstance(error, ArtifactUnavailableError):
+        return UserFacingError(
+            code="artifact_unavailable",
+            title="Modelo no disponible",
+            message="No se ha podido cargar el modelo configurado.",
+            recovery="Comprueba la configuración del bundle o avisa al equipo.",
+            request_id=request_id,
+        )
+    if isinstance(error, InferenceTimeoutError):
+        return UserFacingError(
+            code="timeout",
+            title="La inferencia tardó demasiado",
+            message="El modelo no respondió dentro del tiempo permitido.",
+            recovery="Pulsa «Reintentar» en unos segundos.",
+            request_id=request_id,
+        )
+    return UserFacingError(
+        code="prediction_error",
+        title="No se pudo obtener la predicción",
+        message="El modelo no devolvió una salida válida.",
+        recovery="Pulsa «Reintentar»; si se repite, comparte el request_id.",
+        request_id=request_id,
+    )

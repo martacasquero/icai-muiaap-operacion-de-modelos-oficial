@@ -74,15 +74,61 @@ def collect_values(st: Any) -> tuple[bool, dict[str, float]]:
 
 
 def get_cached_gateway(st: Any, bundle_value: str | None) -> InferenceGateway:
-    """TODO: usa `st.cache_resource` sobre el gateway, no sobre la respuesta."""
+    """Cachea el gateway (recurso compartido), no la respuesta de una petición."""
 
-    raise NotImplementedError("TODO: cachea el gateway heredado de S5")
+    @st.cache_resource
+    def load_gateway(bundle: str | None) -> InferenceGateway:
+        return build_gateway(bundle)
+
+    return load_gateway(bundle_value)
 
 
 def render_state(st: Any, state: UiState, target: Any | None = None) -> None:
-    """TODO: presenta idle/loading/success/error en un target de Streamlit."""
+    """Presenta idle/loading/success/error en un target de Streamlit."""
 
-    raise NotImplementedError("TODO: renderiza el estado sin mostrar excepciones")
+    # Si hay target (st.empty), se reemplaza su contenido en cada evento
+    area = target.container() if target is not None else st.container()
+    with area:
+        if state.phase == "idle":
+            st.info("Rellena el formulario y pulsa «Ejecutar inferencia».")
+
+        elif state.phase == "loading":
+            st.info("Ejecutando inferencia…")
+
+        elif state.phase == "success" and state.view is not None:
+            view = state.view
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Categoría", view.quality_label)
+            col2.metric(
+                "Confianza",
+                f"{view.confidence:.0%}",
+                view.confidence_label,
+                delta_color="off",
+            )
+            col3.metric(
+                "Latencia",
+                f"{view.latency_ms:.0f} ms",
+                view.latency_label,
+                delta_color="off",
+            )
+            if view.confidence_level == "low":
+                st.warning(view.confidence_message)
+            else:
+                st.info(view.confidence_message)
+            if view.latency_status == "above_target":
+                st.warning(view.latency_message)
+            with st.expander("Trazabilidad"):
+                st.write(f"Modelo: `{view.model_version}`")
+                st.write(f"Preprocesado: `{view.preprocessing_version}`")
+                st.write(f"request_id: `{state.request_id}`")
+
+        elif state.phase == "error" and state.error is not None:
+            error = state.error
+            st.error(f"**{error.title}.** {error.message}")
+            st.info(error.recovery)
+            with st.expander("Trazabilidad"):
+                st.write(f"Código: `{error.code}`")
+                st.write(f"request_id: `{error.request_id}`")
 
 
 def main() -> None:
@@ -123,6 +169,7 @@ def main() -> None:
                 ),
                 state="complete" if state.phase == "success" else "error",
             )
+        state_slot.empty()
 
     if st.button("Limpiar último resultado"):
         clear_last_state(st.session_state)
