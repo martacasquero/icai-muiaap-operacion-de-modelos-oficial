@@ -29,6 +29,9 @@ class ClientConfig(BaseModel):
     # - `rate_limit_per_minute`: entero estrictamente positivo, 60 por defecto
     #   (`Field` con una restricción numérica).
     # Comprobación: tests/test_s10_1_settings.py (repr y configuración inválida).
+    key: SecretStr
+    scopes: list[Scope]
+    rate_limit_per_minute: int = Field(default=60, gt=0)
 
 
 class Settings(BaseSettings):
@@ -52,3 +55,13 @@ class Settings(BaseSettings):
     # ¿Por qué un error de configuración debe impedir arrancar en lugar de
     # aparecer en la primera petición?
     # Comprobación: uv run pytest -q tests/test_s10_1_settings.py
+    clients: dict[str, ClientConfig] = {}
+    cors_origins: list[str] = ["http://localhost:8501"]
+    docs_enabled: bool = True
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _reject_wildcard(cls, origins: list[str]) -> list[str]:
+        if "*" in origins:
+            raise ValueError("'*' no está permitido: lista los orígenes uno a uno")
+        return origins

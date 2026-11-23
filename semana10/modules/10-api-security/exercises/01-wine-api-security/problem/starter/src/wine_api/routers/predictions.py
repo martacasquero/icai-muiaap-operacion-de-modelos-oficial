@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 
 from wine_api.dependencies import PredictorDep, RequestIdDep
+from wine_api.rate_limit import enforce_rate_limit
 from wine_api.schemas import (
     VALID_FEATURES_EXAMPLE,
     ErrorResponse,
@@ -11,6 +12,7 @@ from wine_api.schemas import (
     PredictionRequest,
     PredictionResponse,
 )
+from wine_api.security import require_scope
 
 PREDICTION_EXAMPLES = {
     "valid": {
@@ -42,11 +44,24 @@ PREDICTION_EXAMPLES = {
 router = APIRouter(
     prefix="/v1/predictions",
     tags=["predictions"],
+    dependencies=[Depends(require_scope("predict")), Depends(enforce_rate_limit)],
     responses={
         400: {"model": ErrorResponse, "description": "El cuerpo no es JSON válido."},
+        401: {"model": ErrorResponse, "description": "API key ausente o no válida."},
+        403: {"model": ErrorResponse, "description": "La API key no tiene el scope."},
         422: {
             "model": ErrorResponse,
             "description": "JSON válido que incumple campos, tipos o rangos.",
+        },
+        429: {
+            "model": ErrorResponse,
+            "description": "Cuota por minuto agotada.",
+            "headers": {
+                "Retry-After": {
+                    "description": "Segundos que hay que esperar.",
+                    "schema": {"type": "integer"},
+                }
+            },
         },
         503: {"model": ErrorResponse, "description": "El modelo no está cargado."},
     },

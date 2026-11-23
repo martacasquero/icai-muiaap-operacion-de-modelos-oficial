@@ -35,6 +35,11 @@ class WineApiError(Exception):
     # `error_response` y que esta las copie SIN perder `X-Request-Id`.
     # `ModelUnavailableError()` debe seguir funcionando sin argumentos.
     # Comprobación: tests/test_s10_2_authentication.py (WWW-Authenticate).
+    default_headers: dict[str, str] = {}
+
+    def __init__(self, headers: dict[str, str] | None = None) -> None:
+        super().__init__(self.message)
+        self.headers = {**self.default_headers, **(headers or {})}
 
 
 class ModelUnavailableError(WineApiError):
@@ -54,12 +59,41 @@ class ModelUnavailableError(WineApiError):
 # y, si quieres, `X-RateLimit-Limit` y `X-RateLimit-Remaining: 0`.
 
 
+class AuthenticationError(WineApiError):
+    status_code = 401
+    code = ErrorCode.UNAUTHORIZED
+    message = "Missing or invalid API key"
+    default_headers = {"WWW-Authenticate": "ApiKey"}
+
+
+class PermissionDeniedError(WineApiError):
+    status_code = 403
+    code = ErrorCode.FORBIDDEN
+    message = "This API key is not allowed to use this resource"
+
+
+class RateLimitExceededError(WineApiError):
+    status_code = 429
+    code = ErrorCode.RATE_LIMITED
+    message = "Rate limit exceeded, retry later"
+
+    def __init__(self, retry_after: int, limit: int) -> None:
+        super().__init__(
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(limit),
+                "X-RateLimit-Remaining": "0",
+            }
+        )
+
+
 def error_response(
     request: Request,
     status_code: int,
     code: ErrorCode,
     message: str,
     fields: list[FieldError] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     """Construye el sobre de error; `fields` desaparece si no aplica."""
 
@@ -71,7 +105,7 @@ def error_response(
     return JSONResponse(
         status_code=status_code,
         content=body.model_dump(mode="json", exclude_none=True),
-        headers={REQUEST_ID_HEADER: request_id},
+        headers={**(headers or {}), REQUEST_ID_HEADER: request_id},
     )
 
 
@@ -104,7 +138,9 @@ async def handle_validation_error(
 
 
 async def handle_api_error(request: Request, exc: WineApiError) -> JSONResponse:
-    return error_response(request, exc.status_code, exc.code, exc.message)
+    return error_response(
+        request, exc.status_code, exc.code, exc.message, headers=exc.headers
+    )
 
 
 async def handle_http_exception(

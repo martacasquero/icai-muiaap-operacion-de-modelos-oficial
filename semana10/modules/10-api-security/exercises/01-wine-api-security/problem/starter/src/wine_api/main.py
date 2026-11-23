@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # noqa: F401 - pista para S10.5a
+from fastapi.middleware.cors import CORSMiddleware
 
 from wine_api.errors import install_error_handlers
 from wine_api.predictor import Predictor, build_predictor
@@ -20,7 +20,7 @@ from wine_api.settings import Settings
 # Después regenera el contrato (S10.6c):
 #   uv run python -m wine_api.export_openapi && git diff contracts/openapi.json
 # Comprobación: tests/test_s10_6_openapi.py
-API_VERSION = "1.1.0"
+API_VERSION = "2.0.0"
 
 API_DESCRIPTION = """
 Servicio de inferencia del proyecto **Wine Quality** de Operación de Modelos.
@@ -29,11 +29,23 @@ Servicio de inferencia del proyecto **Wine Quality** de Operación de Modelos.
 - Todos los errores comparten el sobre `ErrorResponse`; programa contra
   `error.code`, no contra `error.message`.
 - La predicción es determinista y docente: no es una garantía de calidad.
+
+**Seguridad (desde 2.0.0)**
+
+- Autenticación: las rutas `/v1/*` exigen la cabecera `X-API-Key`. Sin clave
+  o con una clave incorrecta se responde `401` (`unauthorized`). `/health`
+  sigue siendo pública.
+- Scopes: `predict` permite `POST /v1/predictions` y `admin` permite
+  `GET /v1/admin/usage`. Sin el scope necesario se responde `403` (`forbidden`).
+- Rate limit: cada cliente tiene una cuota de peticiones por minuto. Al
+  superarla se responde `429` (`rate_limited`) con la cabecera `Retry-After`
+  (segundos de espera).
 """
 
 OPENAPI_TAGS = [
     {"name": "health", "description": "Disponibilidad del servicio y del modelo."},
     {"name": "predictions", "description": "Inferencia de calidad de vino tinto."},
+    {"name": "admin", "description": "Operación: consumo de cuota por cliente."},
 ]
 
 
@@ -62,6 +74,9 @@ def create_app(
         description=API_DESCRIPTION,
         openapi_tags=OPENAPI_TAGS,
         lifespan=lifespan,
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
     app.state.settings = settings
     app.state.rate_limiter = rate_limiter or FixedWindowRateLimiter()
@@ -75,6 +90,14 @@ def create_app(
     # no debe pasar por la autenticación? Pista: el último middleware que se
     # añade es el más externo.
     # Comprobación: uv run pytest -q tests/test_s10_5_cors.py
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-API-Key"],
+        allow_credentials=False,
+        expose_headers=["X-Request-Id", "Retry-After", "X-RateLimit-Remaining"],
+    )
     install_error_handlers(app)
     app.include_router(health.router)
     app.include_router(predictions.router)
