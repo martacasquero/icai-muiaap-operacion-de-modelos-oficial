@@ -10,6 +10,7 @@ from typing import Any
 from model_ui.contracts import PredictionPayload
 from model_ui.errors import ArtifactUnavailableError, InputContractError
 from model_ui.gateway import InferenceGateway, PackagedBundleGateway
+from model_ui.presentation import confidence_caption, quality_label
 from model_ui.ui_schema import FIELD_SPECS
 
 
@@ -46,17 +47,33 @@ def collect_values(st: Any) -> tuple[bool, dict[str, float]]:
     estable. Devuelve ``(submitted, values)`` sin llamar al gateway.
     """
 
-    raise NotImplementedError(
-        f"TODO: renderiza los {len(FIELD_SPECS)} campos de FIELD_SPECS"
-    )
+    values: dict[str, float] = {}
+    with st.form("wine_quality_form"):
+        for field in FIELD_SPECS:
+            values[field.name] = st.number_input(
+                field.label,
+                min_value=field.min_value,
+                max_value=field.max_value,
+                value=field.default,
+                step=field.step,
+                key=f"input_{field.name}",
+            )
+        submitted = st.form_submit_button("Ejecutar inferencia")
+    return submitted, values
 
 
 def render_prediction(st: Any, prediction: PredictionPayload) -> None:
     """TODO: presenta los cuatro campos de ``PredictionPayload``."""
 
-    raise NotImplementedError(
-        "TODO: presenta quality_band, confidence y las dos versiones"
-    )
+    st.success(quality_label(prediction))
+    col_band, col_confidence = st.columns(2)
+    with col_band:
+        col_band.metric("quality_band", prediction.quality_band)
+    with col_confidence:
+        col_confidence.metric("confidence", prediction.confidence)
+    st.caption(confidence_caption(prediction))
+    st.write(f"model_version: {prediction.model_version}")
+    st.write(f"preprocessing_version: {prediction.preprocessing_version}")
 
 
 def run_app(st: Any, gateway: InferenceGateway) -> None:
